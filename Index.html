@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>BookLens — AI Book Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Mono:wght@300;400;500&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink: #1a1209;
+    --paper: #f5f0e8;
+    --cream: #ede7d3;
+    --gold: #c9a84c;
+    --gold-light: #e8c97a;
+    --rust: #b5451b;
+    --sage: #5a7a5c;
+    --shadow: rgba(26,18,9,0.15);
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Lora', Georgia, serif;
+    overflow-x: hidden;
+  }
+
+  /* Texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.6;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    padding: 3rem 1.5rem 1.5rem;
+    position: relative;
+  }
+
+  .logo-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 0.5rem;
+  }
+
+  h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: clamp(2.8rem, 8vw, 5rem);
+    font-weight: 900;
+    line-height: 0.9;
+    color: var(--ink);
+    position: relative;
+    display: inline-block;
+  }
+
+  h1 em {
+    font-style: italic;
+    color: var(--rust);
+  }
+
+  .tagline {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 1rem;
+    color: #7a6a55;
+    margin-top: 0.75rem;
+  }
+
+  /* Decorative rule */
+  .ornament {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem auto;
+    width: fit-content;
+  }
+  .ornament span {
+    font-size: 1.2rem;
+    color: var(--gold);
+  }
+  .ornament::before, .ornament::after {
+    content: '';
+    display: block;
+    width: 60px;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--gold));
+  }
+  .ornament::after {
+    background: linear-gradient(to left, transparent, var(--gold));
+  }
+
+  /* Main container */
+  main {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 0 1.25rem 4rem;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--gold);
+    border-radius: 4px;
+    background: var(--cream);
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(201,168,76,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--rust);
+    background: #ede0c8;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px var(--shadow);
+  }
+
+  .upload-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+
+  .upload-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+  }
+
+  .upload-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: #8a7a65;
+    text-transform: uppercase;
+  }
+
+  #fileInput { display: none; }
+
+  /* Camera button */
+  .btn-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    flex: 1;
+    min-width: 140px;
+    padding: 0.85rem 1.5rem;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .btn-primary:hover {
+    background: var(--rust);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(181,69,27,0.3);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--ink);
+    border: 1.5px solid var(--ink);
+  }
+  .btn-secondary:hover {
+    background: var(--cream);
+    transform: translateY(-1px);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* Preview */
+  .preview-wrap {
+    display: none;
+    margin-top: 1.5rem;
+    position: relative;
+  }
+
+  .preview-wrap.visible { display: block; }
+
+  .preview-img {
+    width: 100%;
+    max-height: 320px;
+    object-fit: contain;
+    border-radius: 3px;
+    box-shadow: 0 4px 24px var(--shadow), 4px 4px 0 var(--gold);
+    background: var(--cream);
+  }
+
+  .preview-label {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    background: var(--ink);
+    color: var(--gold);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.6rem;
+    border-radius: 2px;
+  }
+
+  /* Analyze button */
+  .btn-analyze {
+    width: 100%;
+    margin-top: 1.25rem;
+    padding: 1.1rem;
+    background: linear-gradient(135deg, var(--gold) 0%, #a8782a 100%);
+    color: var(--ink);
+    border: none;
+    border-radius: 3px;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: all 0.25s;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    box-shadow: 0 3px 0 #8a6020, 0 6px 20px rgba(201,168,76,0.25);
+  }
+
+  .btn-analyze.visible {
+    display: flex;
+  }
+
+  .btn-analyze:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 0 #8a6020, 0 12px 28px rgba(201,168,76,0.35);
+  }
+
+  .btn-analyze:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 #8a6020;
+  }
+
+  .btn-analyze:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Loading */
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 2.5rem 1rem;
+  }
+
+  .loading.visible { display: block; }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--cream);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 1rem;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 1rem;
+    color: #8a7a65;
+  }
+
+  .loading-dots::after {
+    content: '';
+    animation: dots 1.5s steps(4, end) infinite;
+  }
+
+  @keyframes dots {
+    0%  { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+  }
+
+  /* Result card */
+  .result-card {
+    display: none;
+    margin-top: 2rem;
+    background: white;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px var(--shadow), 0 12px 40px rgba(26,18,9,0.08);
+    animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .result-card.visible { display: block; }
+
+  .card-header {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 1.5rem 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card-header::after {
+    content: '❧';
+    position: absolute;
+    right: 1.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 3rem;
+    color: rgba(201,168,76,0.2);
+  }
+
+  .card-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 0.5rem;
+  }
+
+  .book-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.3rem, 4vw, 1.8rem);
+    font-weight: 900;
+    line-height: 1.15;
+    color: var(--paper);
+  }
+
+  .book-author {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 1rem;
+    color: var(--gold-light);
+    margin-top: 0.4rem;
+  }
+
+  .card-body {
+    padding: 2rem;
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--gold), transparent);
+    opacity: 0.4;
+  }
+
+  .description-text {
+    font-family: 'Lora', serif;
+    font-size: 0.97rem;
+    line-height: 1.85;
+    color: #3a2e1f;
+  }
+
+  /* Meta chips */
+  .meta-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .chip {
+    background: var(--cream);
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 2px;
+    padding: 0.3rem 0.8rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    color: #6a5a45;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  /* Error */
+  .error-box {
+    display: none;
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    background: #fff5f3;
+    border-left: 3px solid var(--rust);
+    border-radius: 0 3px 3px 0;
+  }
+
+  .error-box.visible { display: block; }
+
+  .error-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    color: var(--rust);
+    margin-bottom: 0.3rem;
+  }
+
+  .error-msg {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: #8a4030;
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 2rem 1rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: #a09080;
+    border-top: 1px solid rgba(201,168,76,0.2);
+    margin-top: 3rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    .btn-row { flex-direction: column; }
+    .card-body { padding: 1.25rem; }
+    .card-header { padding: 1.25rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-eyebrow">✦ Powered by Claude AI ✦</div>
+  <h1>Book<em>Lens</em></h1>
+  <p class="tagline">Point. Shoot. Discover the story behind the story.</p>
+  <div class="ornament"><span>❧</span></div>
+</header>
+
+<main>
+
+  <!-- Upload Zone -->
+  <div class="upload-zone" id="uploadZone">
+    <span class="upload-icon">📖</span>
+    <div class="upload-title">Drop a book photo here</div>
+    <div class="upload-sub">or use the buttons below</div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="document.getElementById('cameraInput').click()">
+      📷 Take Photo
+    </button>
+    <button class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
+      🗂 Choose File
+    </button>
+  </div>
+
+  <!-- Hidden inputs -->
+  <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this)" />
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="handleFile(this)" />
+
+  <!-- Preview -->
+  <div class="preview-wrap" id="previewWrap">
+    <img class="preview-img" id="previewImg" alt="Book preview" />
+    <div class="preview-label">Selected Image</div>
+  </div>
+
+  <!-- Analyze button -->
+  <button class="btn-analyze" id="analyzeBtn" onclick="analyzeBook()">
+    ✦ Identify This Book
+  </button>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p class="loading-text">Reading the pages<span class="loading-dots"></span></p>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox">
+    <div class="error-title">Couldn't identify the book</div>
+    <div class="error-msg" id="errorMsg">An unexpected error occurred.</div>
+  </div>
+
+  <!-- Result -->
+  <div class="result-card" id="resultCard">
+    <div class="card-header">
+      <div class="card-badge">✦ Book Identified</div>
+      <div class="book-title" id="bookTitle">—</div>
+      <div class="book-author" id="bookAuthor">—</div>
+    </div>
+    <div class="card-body">
+      <div class="section-label">Description</div>
+      <p class="description-text" id="bookDescription">—</p>
+      <div class="meta-chips" id="metaChips"></div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  BookLens &nbsp;·&nbsp; AI-powered book recognition &nbsp;·&nbsp; Anthropic Claude
+</footer>
+
+<script>
+let currentBase64 = null;
+let currentMime = 'image/jpeg';
+
+// Drag & drop
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('click', () => document.getElementById('fileInput').click());
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) loadFile(file);
+});
+
+function handleFile(input) {
+  const file = input.files[0];
+  if (file) loadFile(file);
+  input.value = '';
+}
+
+function loadFile(file) {
+  currentMime = file.type || 'image/jpeg';
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    currentBase64 = dataUrl.split(',')[1];
+
+    const img = document.getElementById('previewImg');
+    img.src = dataUrl;
+    document.getElementById('previewWrap').classList.add('visible');
+    document.getElementById('analyzeBtn').classList.add('visible');
+
+    // Reset results
+    document.getElementById('resultCard').classList.remove('visible');
+    document.getElementById('resultCard').style.display = 'none';
+    document.getElementById('errorBox').classList.remove('visible');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function analyzeBook() {
+  if (!currentBase64) return;
+
+  const btn = document.getElementById('analyzeBtn');
+  const loading = document.getElementById('loading');
+  const resultCard = document.getElementById('resultCard');
+  const errorBox = document.getElementById('errorBox');
+
+  btn.disabled = true;
+  loading.classList.add('visible');
+  resultCard.classList.remove('visible');
+  resultCard.style.display = 'none';
+  errorBox.classList.remove('visible');
+
+  const systemPrompt = `You are a world-class book identification expert and literary critic.
+When given an image of a book, identify it and return ONLY a valid JSON object with no extra text, no markdown, no backticks.
+The JSON must have exactly these fields:
+{
+  "title": "Full book title",
+  "author": "Author full name",
+  "description": "A rich 3-4 sentence description of the book covering its themes, plot, and significance",
+  "genre": "Primary genre",
+  "year": "Publication year",
+  "pages": "Approximate page count or 'Unknown'"
+}
+If you cannot identify the book, still return valid JSON with title set to "Book Not Identified" and describe what you can see.`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: currentMime,
+                data: currentBase64
+              }
+            },
+            { type: "text", text: "Please identify this book and return the JSON as instructed." }
+          ]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const raw = data.content.map(b => b.text || '').join('');
+    const clean = raw.replace(/```json|```/gi, '').trim();
+    const book = JSON.parse(clean);
+
+    // Populate result
+    document.getElementById('bookTitle').textContent = book.title || '—';
+    document.getElementById('bookAuthor').textContent = book.author ? `by ${book.author}` : '—';
+    document.getElementById('bookDescription').textContent = book.description || '—';
+
+    const chips = document.getElementById('metaChips');
+    chips.innerHTML = '';
+    if (book.genre) chips.innerHTML += `<span class="chip">📚 ${book.genre}</span>`;
+    if (book.year) chips.innerHTML += `<span class="chip">🗓 ${book.year}</span>`;
+    if (book.pages && book.pages !== 'Unknown') chips.innerHTML += `<span class="chip">📄 ~${book.pages} pages</span>`;
+
+    resultCard.style.display = 'block';
+    setTimeout(() => resultCard.classList.add('visible'), 10);
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (err) {
+    document.getElementById('errorMsg').textContent = err.message;
+    errorBox.classList.add('visible');
+  } finally {
+    btn.disabled = false;
+    loading.classList.remove('visible');
+  }
+}
+</script>
+
+</body>
+</html>
